@@ -1,0 +1,67 @@
+version: "3.9"
+
+# ============================================================
+# Camera NOC Dashboard — Docker Compose
+# Khởi chạy: docker-compose up --build
+# ============================================================
+
+services:
+
+  # ----------------------------------------------------------
+  # Backend: FastAPI + Uvicorn
+  # ----------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cam_noc_backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    volumes:
+      # Mount thư mục data để giữ SQLite file sau khi restart
+      - ./data:/app/data
+    environment:
+      - DATABASE_URL=sqlite:///./data/camera_monitor.db
+    ports:
+      # Expose port 8000 để debug trực tiếp nếu cần
+      - "8000:8000"
+    networks:
+      - noc_network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # ----------------------------------------------------------
+  # Frontend: React SPA phục vụ qua Nginx
+  # Nginx đồng thời proxy /api/* → backend
+  # ----------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: cam_noc_frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - noc_network
+
+# ----------------------------------------------------------
+# Network nội bộ để backend ↔ frontend giao tiếp
+# ----------------------------------------------------------
+networks:
+  noc_network:
+    driver: bridge
+
+# ----------------------------------------------------------
+# Volume để persist SQLite database
+# ----------------------------------------------------------
+volumes:
+  noc_data:
